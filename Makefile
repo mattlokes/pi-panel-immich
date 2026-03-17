@@ -1,7 +1,7 @@
 PI      := prime
 REMOTE  := ~/immich-frame
 SESSION := immich-frame
-FILES   := immich_frame.py config.yaml
+FILES   := immich_frame.py config.yaml cache.py client.py config.py models.py renderers.py signals.py
 
 # ── Shared helpers ─────────────────────────────────────────────────────────────
 # Find the PID of the python process running in the tmux session.
