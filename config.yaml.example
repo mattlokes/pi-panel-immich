@@ -1,0 +1,66 @@
+# ─────────────────────────────────────────────────────────
+# Immich Frame — config.yaml
+# Copy this file to config.yaml and fill in your values.
+# ─────────────────────────────────────────────────────────
+
+# ── Immich connection ────────────────────────────────────
+immich_url: "http://your-immich-host:80"
+api_key: "YOUR_API_KEY_HERE"
+
+# Album ID — leave empty for random photos from whole library
+# Get it from the album URL: /albums/<uuid-here>
+album_id: ""
+
+# ── Renderer ─────────────────────────────────────────────
+# "sw"  — pygame software renderer
+#         Ken Burns crop+scale runs on the CPU via smoothscale
+#         No extra dependencies. Safe default for any system.
+#
+# "gpu" — pysdl2 hardware renderer (recommended for Pi 5)
+#         Ken Burns crop+scale runs on the VideoCore VII GPU
+#         via SDL_RenderCopyF destination rect — zero CPU per frame
+#         Requires pysdl2 and pysdl2-dll (installed automatically by uv)
+#         Requires the Pi's GPU driver to be active (default on Pi OS)
+#         Will crash with a clear error if the GPU is unavailable.
+renderer: "sw"
+
+# ── Display ──────────────────────────────────────────────
+display_seconds: 10.0
+fullscreen: true
+window_width: 1280    # used only when fullscreen: false
+window_height: 720
+
+# ── Transitions ──────────────────────────────────────────
+# "ken_burns" — slow pan & zoom with crossfade (recommended)
+# "crossfade"  — simple opacity blend between static images
+transition_type: "ken_burns"
+
+# Duration of the crossfade overlap at the end of each display period
+fade_duration: 1.5
+
+# ── Ken Burns ────────────────────────────────────────────
+# 1.0 = no zoom, 1.15 = 15% zoom. Keep max below ~1.25.
+ken_burns_zoom_min: 1.0
+ken_burns_zoom_max: 1.15
+
+# Total duration of pan/zoom per photo. Should be >= display_seconds.
+ken_burns_duration: 10.0
+
+# ── Portrait grouping ────────────────────────────────────
+# Portrait images are grouped side-by-side to fill the 16:9 frame.
+# "2"    — always 2 side by side
+# "3"    — always 3 side by side
+# "auto" — 3 for very narrow portraits (aspect < 0.6), else 2
+portrait_grouping: "auto"
+
+# Gap in pixels between grouped portrait images (0 for flush)
+portrait_gap_px: 10
+
+# ── Performance ──────────────────────────────────────────
+# Photos to prefetch in background. Increase for portrait grouping.
+cache_size: 6
+
+# Render target FPS.
+# SW renderer:  30 recommended (halves CPU vs 60, imperceptible on slow KB)
+# GPU renderer: 60 fine (GPU does the work, CPU impact is minimal)
+target_fps: 30
