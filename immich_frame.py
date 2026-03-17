@@ -76,6 +76,8 @@ class Config:
     # Portrait grouping
     portrait_grouping: str = "auto"   # "2" | "3" | "auto"
     portrait_gap_px: int   = 10
+    portrait_fill: float   = 0.0      # 0.0 = contain (letterbox), 1.0 = cover (crop to fill slot)
+    landscape_fill: float  = 1.0      # 0.0 = contain (letterbox), 1.0 = cover (crop to fill screen)
 
     # Performance
     cache_size: int  = 6
@@ -162,6 +164,13 @@ class KenBurnsParams:
     end_pan_y: float
 
 
+STATIC_KB = KenBurnsParams(
+    start_zoom=1.0, end_zoom=1.0,
+    start_pan_x=0.5, start_pan_y=0.5,
+    end_pan_x=0.5,   end_pan_y=0.5,
+)
+
+
 def random_ken_burns(cfg: Config) -> KenBurnsParams:
     z_min, z_max = cfg.ken_burns_zoom_min, cfg.ken_burns_zoom_max
     margin = 0.15
@@ -199,7 +208,10 @@ def decode_photo(image_bytes: bytes, oversized: tuple[int, int]) -> Optional[Pho
         scale = max(tw / iw, th / ih)
         new_w, new_h = int(math.ceil(iw * scale)), int(math.ceil(ih * scale))
         sw_img = pil_img.resize((new_w, new_h), Image.LANCZOS)
-        surface = pygame.image.fromstring(sw_img.tobytes(), (new_w, new_h), "RGB").convert()
+        raw_surf = pygame.image.fromstring(sw_img.tobytes(), (new_w, new_h), "RGB")
+        # .convert() optimises blitting but requires an active pygame display mode.
+        # Skip it when no display is initialised (e.g. GPU renderer uses SDL2, not pygame).
+        surface = raw_surf.convert() if pygame.display.get_surface() else raw_surf
 
         return Photo(
             pil_image     = pil_img,
@@ -260,6 +272,11 @@ class PhotoCache:
             else:
                 time.sleep(0.3)
 
+    def push_back(self, photo: Photo) -> None:
+        """Return a photo to the front of the queue (e.g. when it doesn't fit a group)."""
+        with self._lock:
+            self._queue.insert(0, photo)
+
     def get_next(self) -> Photo:
         while True:
             with self._lock:
@@ -280,8 +297,7 @@ def portrait_group_size(cfg: Config, first: Photo) -> int:
         return 2
     if cfg.portrait_grouping == "3":
         return 3
-    w, h  = first.original_size
-    return 3 if (w / h) < 0.6 else 2
+    return 3  # auto: try for 3, collect_slide_photos falls back to fewer if needed
 
 
 def collect_slide_photos(cache: PhotoCache, cfg: Config) -> list[Photo]:
@@ -293,9 +309,10 @@ def collect_slide_photos(cache: PhotoCache, cfg: Config) -> list[Photo]:
     target = portrait_group_size(cfg, first)
     for _ in range(target - 1):
         nxt = cache.get_next()
-        group.append(nxt)
         if not nxt.is_portrait:
+            cache.push_back(nxt)
             break
+        group.append(nxt)
     return group
 
 
@@ -384,14 +401,21 @@ class SWRenderer(Renderer):
             slot_w    = (sw - total_gap) // n
             canvas    = pygame.Surface((sw, sh))
             canvas.fill((0, 0, 0))
+            fill = max(0.0, min(1.0, cfg.portrait_fill))
             for i, photo in enumerate(photos):
                 src_w, src_h = photo.surface.get_size()
-                scale    = min(slot_w / src_w, sh / src_h)
-                scaled_w = int(src_w * scale)
-                scaled_h = int(src_h * scale)
-                scaled   = pygame.transform.smoothscale(photo.surface, (scaled_w, scaled_h))
-                slot_x   = i * (slot_w + gap)
-                canvas.blit(scaled, (slot_x + (slot_w - scaled_w) // 2, (sh - scaled_h) // 2))
+                scale_fit    = min(slot_w / src_w, sh / src_h)
+                scale_cover  = max(slot_w / src_w, sh / src_h)
+                scale        = scale_fit + (scale_cover - scale_fit) * fill
+                scaled_w     = int(src_w * scale)
+                scaled_h     = int(src_h * scale)
+                scaled       = pygame.transform.smoothscale(photo.surface, (scaled_w, scaled_h))
+                slot_x       = i * (slot_w + gap)
+                blit_x       = slot_x + (slot_w - scaled_w) // 2
+                blit_y       = (sh - scaled_h) // 2
+                canvas.set_clip(pygame.Rect(slot_x, 0, slot_w, sh))
+                canvas.blit(scaled, (blit_x, blit_y))
+            canvas.set_clip(None)
             self._prev_surf    = self._current_surf
             self._current_surf = canvas
 
@@ -482,6 +506,7 @@ class GPURenderer(Renderer):
                 SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STATIC,
                 SDL_BLENDMODE_BLEND, SDL_BLENDMODE_NONE,
                 SDL_GetWindowSize, SDL_Rect, SDL_FRect,
+                SDL_RenderSetClipRect,
                 SDL_GetError,
             )
             from sdl2 import SDL_SetTextureAlphaMod
@@ -531,8 +556,10 @@ class GPURenderer(Renderer):
         self._SDL_TEXTUREACCESS_STATIC = SDL_TEXTUREACCESS_STATIC
         self._SDL_BLENDMODE_BLEND   = SDL_BLENDMODE_BLEND
         self._SDL_BLENDMODE_NONE    = SDL_BLENDMODE_NONE
-        self._SDL_FRect             = SDL_FRect
-        self._SDL_GetWindowSize     = SDL_GetWindowSize
+        self._SDL_FRect              = SDL_FRect
+        self._SDL_Rect               = SDL_Rect
+        self._SDL_RenderSetClipRect  = SDL_RenderSetClipRect
+        self._SDL_GetWindowSize      = SDL_GetWindowSize
 
         self._cfg             = cfg
         self._current_textures: list = []   # list of (texture, orig_w, orig_h)
@@ -575,24 +602,28 @@ class GPURenderer(Renderer):
     def _compose_portrait_textures(self, photos: list[Photo], cfg: Config) -> list:
         """
         For portrait groups, upload each photo as its own texture.
-        Returns list of (texture, dest_x, dest_y, dest_w, dest_h) for rendering.
+        Returns list of (texture, dest_x, dest_y, dest_w, dest_h, clip_x, clip_w).
+        clip_x/clip_w define the slot bounds used to prevent bleed when portrait_fill > 0.
         """
         sw, sh    = self._sw, self._sh
         n         = len(photos)
         gap       = cfg.portrait_gap_px
         total_gap = gap * (n - 1)
         slot_w    = (sw - total_gap) // n
+        fill      = max(0.0, min(1.0, cfg.portrait_fill))
         result    = []
         for i, photo in enumerate(photos):
-            iw, ih  = photo.original_size
-            scale   = min(slot_w / iw, sh / ih)
-            dw      = int(iw * scale)
-            dh      = int(ih * scale)
-            slot_x  = i * (slot_w + gap)
-            dx      = slot_x + (slot_w - dw) // 2
-            dy      = (sh - dh) // 2
+            iw, ih      = photo.original_size
+            scale_fit   = min(slot_w / iw, sh / ih)
+            scale_cover = max(slot_w / iw, sh / ih)
+            scale       = scale_fit + (scale_cover - scale_fit) * fill
+            dw          = int(iw * scale)
+            dh          = int(ih * scale)
+            slot_x      = i * (slot_w + gap)
+            dx          = slot_x + (slot_w - dw) // 2
+            dy          = (sh - dh) // 2
             tex, tw, th = self._upload_texture(photo.pil_image)
-            result.append((tex, dx, dy, dw, dh))
+            result.append((tex, dx, dy, dw, dh, slot_x, slot_w))
         return result
 
     def present_slide(self, photos: list[Photo], cfg: Config) -> None:
@@ -605,7 +636,13 @@ class GPURenderer(Renderer):
 
         if len(photos) == 1:
             tex, tw, th = self._upload_texture(photos[0].pil_image)
-            self._current_textures = [(tex, 0, 0, tw, th)]
+            fill        = max(0.0, min(1.0, cfg.landscape_fill))
+            scale_fit   = min(self._sw / tw, self._sh / th)
+            scale_cover = max(self._sw / tw, self._sh / th)
+            scale       = scale_fit + (scale_cover - scale_fit) * fill
+            eff_w       = int(tw * scale)
+            eff_h       = int(th * scale)
+            self._current_textures = [(tex, 0, 0, eff_w, eff_h)]
         else:
             self._current_textures = self._compose_portrait_textures(photos, cfg)
 
@@ -633,7 +670,7 @@ class GPURenderer(Renderer):
         sw, sh = self._sw, self._sh
 
         for item in texture_info:
-            tex, base_x, base_y, base_w, base_h = item
+            tex, base_x, base_y, base_w, base_h, *clip_info = item
 
             self._SDL_SetTextureAlphaMod(tex, alpha)
             if alpha < 255:
@@ -643,7 +680,6 @@ class GPURenderer(Renderer):
 
             if not is_portrait_group:
                 # Landscape: zoom out the dest rect and pan its position
-                # Enlarged dest rect size
                 dst_w = base_w * zoom
                 dst_h = base_h * zoom
                 # Pan offset: px,py is the normalised centre we want on screen centre
@@ -651,7 +687,6 @@ class GPURenderer(Renderer):
                 dst_y = sh / 2 - py * dst_h
             else:
                 # Portrait group: apply a gentler Ken Burns within the slot
-                # Keep zoom subtle so portraits don't clip into adjacent slots
                 slot_zoom = 1.0 + (zoom - 1.0) * 0.5
                 dst_w = base_w * slot_zoom
                 dst_h = base_h * slot_zoom
@@ -660,9 +695,18 @@ class GPURenderer(Renderer):
                 slot_cy = base_y + base_h / 2
                 dst_x = slot_cx - px * dst_w
                 dst_y = slot_cy - py * dst_h
+                # Clip to slot bounds so fill/KB don't bleed into adjacent slots
+                clip_x, clip_w = clip_info
+                self._SDL_RenderSetClipRect(
+                    self._renderer,
+                    self._SDL_Rect(int(clip_x), 0, int(clip_w), sh),
+                )
 
             dst_rect = self._SDL_FRect(dst_x, dst_y, dst_w, dst_h)
             self._SDL_RenderCopyF(self._renderer, tex, None, dst_rect)
+
+        if is_portrait_group:
+            self._SDL_RenderSetClipRect(self._renderer, None)
 
     def render_frame(
         self,
@@ -871,7 +915,7 @@ def main():
     log.info("Waiting for first slide…")
     first_photos = collect_slide_photos(cache, cfg)
     renderer.present_slide(first_photos, cfg)
-    kb_current = random_ken_burns(cfg)
+    kb_current = STATIC_KB if cfg.transition_type == "crossfade" else random_ken_burns(cfg)
 
     last_switch = time.time()
     sig.reset_pause_accum()
@@ -927,23 +971,24 @@ def main():
             break
 
         # Subtract paused time so the display timer doesn't advance while paused
-        elapsed = time.time() - last_switch - sig.paused_duration()
-        total   = cfg.ken_burns_duration
-        t_ease  = ease_in_out(min(elapsed / total, 1.0))
+        elapsed    = time.time() - last_switch - sig.paused_duration()
+        crossfade  = cfg.transition_type == "crossfade"
+        total      = cfg.ken_burns_duration
+        t_ease     = 0.0 if crossfade else ease_in_out(min(elapsed / total, 1.0))
 
         # ── Time to transition? ───────────────────────────────
         if elapsed >= cfg.display_seconds or force_next:
             next_photos = collect_slide_photos(cache, cfg)
-            kb_next     = random_ken_burns(cfg)
+            kb_next     = STATIC_KB if crossfade else random_ken_burns(cfg)
             log.info(f"Transition → {len(next_photos)} photo(s)")
 
             trans_start = time.time()
-            fade_total  = cfg.ken_burns_duration
-            fade_begins = fade_total - cfg.fade_duration
+            fade_total  = cfg.fade_duration
+            fade_begins = 0.0
 
             renderer.present_slide(next_photos, cfg)
             kb_entering = kb_next
-            kb_leaving  = kb_current
+            kb_leaving  = STATIC_KB if crossfade else kb_current
 
             while True:
                 # Honour shutdown/pause during transition too
@@ -995,8 +1040,8 @@ def main():
             sig.reset_pause_accum()     # zero pause accumulator for the new slide
 
         else:
-            # ── Idle: animate Ken Burns on current slide ──────
-            renderer.render_frame(t_ease=t_ease, kb=kb_current, alpha=1.0)
+            # ── Idle: Ken Burns or static depending on transition mode ──
+            renderer.render_frame(t_ease=t_ease, kb=kb_current if not crossfade else STATIC_KB, alpha=1.0)
             renderer.flip()
 
     cache.stop()

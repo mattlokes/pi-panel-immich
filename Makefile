@@ -27,7 +27,7 @@ deploy:
 
 run:
 	ssh $(PI) 'tmux new-session -d -s $(SESSION) \
-		"cd $(REMOTE) && python3 immich_frame.py 2>&1 | tee -a $(REMOTE)/immich_frame.log"'
+		"cd $(REMOTE) && WAYLAND_DISPLAY=wayland-1 uv run immich_frame.py 2>&1 | tee -a $(REMOTE)/immich_frame.log"'
 
 stop:
 	@pid=$$($(GET_PID)); \

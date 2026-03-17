@@ -50,11 +50,22 @@ ken_burns_duration: 10.0
 # Portrait images are grouped side-by-side to fill the 16:9 frame.
 # "2"    — always 2 side by side
 # "3"    — always 3 side by side
-# "auto" — 3 for very narrow portraits (aspect < 0.6), else 2
+# "auto" — try for 3; shows fewer if consecutive portraits aren't available
 portrait_grouping: "auto"
 
 # Gap in pixels between grouped portrait images (0 for flush)
 portrait_gap_px: 10
+
+# How much to crop portrait photos to reduce top/bottom black bars.
+# 0.0 = contain (no crop, may have black bars)
+# 1.0 = cover (crop left/right until bars are gone)
+# 0.5 = halfway — a good starting point
+portrait_fill: 0.0
+
+# How much to crop landscape photos to fill the screen.
+# 0.0 = contain (letterbox non-16:9 photos)
+# 1.0 = cover (crop to fill, default)
+landscape_fill: 1.0
 
 # ── Performance ──────────────────────────────────────────
 # Photos to prefetch in background. Increase for portrait grouping.
