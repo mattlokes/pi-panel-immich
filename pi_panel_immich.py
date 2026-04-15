@@ -11,14 +11,14 @@
 # ]
 # ///
 """
-Immich Frame - Native Raspberry Pi Photo Frame
+Pi Panel Immich - Native Raspberry Pi Photo Frame
 Two render backends selectable via config.yaml:
   renderer: "sw"  — pygame software renderer (CPU smoothscale)
   renderer: "gpu" — pysdl2 hardware renderer (VideoCore VII on Pi 5)
 
 Usage:
-    ./immich_frame.py                        # uses config.yaml in same directory
-    ./immich_frame.py --config /path/to.yaml # custom config path
+    ./pi_panel_immich.py                        # uses config.yaml in same directory
+    ./pi_panel_immich.py --config /path/to.yaml # custom config path
 """
 
 import argparse
@@ -36,7 +36,7 @@ from renderers import create_renderer
 from signals import SignalState, install_signal_handlers
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-log = logging.getLogger("immich-frame")
+log = logging.getLogger("pi-panel-immich")
 
 
 def handle_events() -> tuple[bool, bool]:
@@ -54,7 +54,7 @@ def handle_events() -> tuple[bool, bool]:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Immich Frame — native Pi photo frame")
+    parser = argparse.ArgumentParser(description="Pi Panel Immich — native Pi photo frame")
     parser.add_argument(
         "--config", "-c",
         type=Path,
@@ -213,7 +213,7 @@ def main():
 
     cache.stop()
     renderer.shutdown()
-    log.info("Immich Frame stopped.")
+    log.info("Pi Panel Immich stopped.")
 
 
 if __name__ == "__main__":

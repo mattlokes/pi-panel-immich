@@ -4,7 +4,7 @@ from typing import Optional
 
 import requests
 
-log = logging.getLogger("immich-frame")
+log = logging.getLogger("pi-panel-immich")
 
 
 @dataclass

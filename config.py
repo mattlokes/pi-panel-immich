@@ -4,7 +4,7 @@ from pathlib import Path
 
 import yaml
 
-log = logging.getLogger("immich-frame")
+log = logging.getLogger("pi-panel-immich")
 
 
 @dataclass

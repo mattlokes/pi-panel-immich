@@ -4,7 +4,7 @@ import threading
 import time
 from typing import Optional
 
-log = logging.getLogger("immich-frame")
+log = logging.getLogger("pi-panel-immich")
 
 
 class SignalState:

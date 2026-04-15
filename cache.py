@@ -13,7 +13,7 @@ from client import ImmichClient
 from config import Config
 from models import Photo
 
-log = logging.getLogger("immich-frame")
+log = logging.getLogger("pi-panel-immich")
 
 
 def decode_photo(image_bytes: bytes, oversized: tuple[int, int]) -> Optional[Photo]:

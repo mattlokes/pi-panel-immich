@@ -1,4 +1,4 @@
-# Immich Frame — Setup Guide
+# Pi Panel Immich — Setup Guide
 
 ## 1. Install uv
 
@@ -10,8 +10,8 @@ source $HOME/.cargo/env   # or open a new terminal
 ## 2. Copy files to your Pi
 
 ```
-immich-frame/
-├── immich_frame.py
+pi-panel-immich/
+├── pi_panel_immich.py
 └── config.yaml
 ```
 
@@ -34,10 +34,10 @@ renderer: "sw"      # or "gpu" on Pi 5
 ## 4. Run
 
 ```bash
-chmod +x immich_frame.py
-./immich_frame.py
+chmod +x pi_panel_immich.py
+./pi_panel_immich.py
 # or with a custom config:
-./immich_frame.py --config /path/to/config.yaml
+./pi_panel_immich.py --config /path/to/config.yaml
 ```
 
 ## 5. Keyboard controls
@@ -60,7 +60,7 @@ Send signals to control the running process without restarting it.
 pidof python3
 
 # If running as a systemd service
-systemctl show immich-frame --property MainPID --value
+systemctl show pi-panel-immich --property MainPID --value
 ```
 
 ### Direct signals
@@ -77,10 +77,10 @@ kill -TERM $PID    # Stop   — clean shutdown
 ### Via systemd (if running as a service)
 
 ```bash
-systemctl kill --signal=USR1 immich-frame   # pause
-systemctl kill --signal=USR2 immich-frame   # resume
-systemctl kill --signal=HUP  immich-frame   # reload config
-systemctl stop               immich-frame   # stop (sends SIGTERM automatically)
+systemctl kill --signal=USR1 pi-panel-immich   # pause
+systemctl kill --signal=USR2 pi-panel-immich   # resume
+systemctl kill --signal=HUP  pi-panel-immich   # reload config
+systemctl stop               pi-panel-immich   # stop (sends SIGTERM automatically)
 ```
 
 ### What SIGHUP reloads
@@ -94,20 +94,20 @@ startup. A warning is logged if you try to change it via reload.
 ## 6. Autostart on boot (systemd)
 
 ```bash
-sudo nano /etc/systemd/system/immich-frame.service
+sudo nano /etc/systemd/system/pi-panel-immich.service
 ```
 
 ```ini
 [Unit]
-Description=Immich Frame
+Description=Pi Panel Immich
 After=network-online.target graphical.target
 Wants=network-online.target
 
 [Service]
 User=pi
 Environment=DISPLAY=:0
-WorkingDirectory=/home/pi/immich-frame
-ExecStart=/home/pi/.cargo/bin/uv run /home/pi/immich-frame/immich_frame.py
+WorkingDirectory=/home/pi/pi-panel-immich
+ExecStart=/home/pi/.cargo/bin/uv run /home/pi/pi-panel-immich/pi_panel_immich.py
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=5
@@ -117,16 +117,16 @@ KillSignal=SIGTERM
 WantedBy=graphical.target
 ```
 
-Note the `ExecReload` line — this means `systemctl reload immich-frame` will send
+Note the `ExecReload` line — this means `systemctl reload pi-panel-immich` will send
 `SIGHUP` and trigger a live config reload without restarting the process.
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable immich-frame
-sudo systemctl start immich-frame
+sudo systemctl enable pi-panel-immich
+sudo systemctl start pi-panel-immich
 
 # Reload config without restarting:
-sudo systemctl reload immich-frame
+sudo systemctl reload pi-panel-immich
 ```
 
 ---

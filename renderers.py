@@ -8,7 +8,7 @@ import pygame
 from config import Config
 from models import KenBurnsParams, Photo
 
-log = logging.getLogger("immich-frame")
+log = logging.getLogger("pi-panel-immich")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -68,7 +68,7 @@ class SWRenderer(Renderer):
         flags = pygame.FULLSCREEN if cfg.fullscreen else 0
         size  = (0, 0) if cfg.fullscreen else (cfg.window_width, cfg.window_height)
         self._screen = pygame.display.set_mode(size, flags)
-        pygame.display.set_caption("Immich Frame")
+        pygame.display.set_caption("Pi Panel Immich")
         self._screen.fill((0, 0, 0))
         pygame.display.flip()
         self._clock       = pygame.time.Clock()
@@ -219,7 +219,7 @@ class GPURenderer(Renderer):
 
         flags = SDL_WINDOW_FULLSCREEN_DESKTOP if cfg.fullscreen else SDL_WINDOW_SHOWN
         self._window = SDL_CreateWindow(
-            b"Immich Frame",
+            b"Pi Panel Immich",
             0x1FFF0000, 0x1FFF0000,   # SDL_WINDOWPOS_CENTERED
             cfg.window_width, cfg.window_height,
             flags,
