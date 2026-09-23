@@ -6,37 +6,59 @@ from typing import Optional
 
 log = logging.getLogger("pi-panel-immich")
 
+# Why the slideshow is paused. Pauses from different sources must not cancel
+# each other: a slideshow the user paused stays paused after the panel hides
+# and re-shows it.
+USER = "user"        # SIGUSR1 / the "pause" action
+HIDDEN = "hidden"    # pi-panel-ctl: not on screen (or the display is off)
+
 
 class SignalState:
     """
-    Thread-safe signal flags consumed by the main loop.
-    Signal handlers only set flags — all real work happens on the main thread.
+    Thread-safe flags consumed by the main loop.
+
+    Signal handlers and the io.pipanel.App service thread only set flags —
+    all real work happens on the main thread.
     """
     def __init__(self):
         self._lock        = threading.Lock()
-        self.paused       = False
+        self._reasons: set[str] = set()
         self.reload       = False
         self.shutdown     = False
+        self._next        = False
         self._pause_start: Optional[float] = None
         self._total_paused: float          = 0.0
 
     # ── pause / resume ───────────────────────────────────────
 
-    def pause(self):
-        with self._lock:
-            if not self.paused:
-                self.paused       = True
-                self._pause_start = time.time()
-                log.info("Paused (SIGUSR1)")
+    @property
+    def paused(self) -> bool:
+        return bool(self._reasons)
 
-    def resume(self):
+    @property
+    def hidden(self) -> bool:
+        return HIDDEN in self._reasons
+
+    def pause(self, reason: str = USER):
         with self._lock:
-            if self.paused:
-                if self._pause_start is not None:
-                    self._total_paused += time.time() - self._pause_start
-                    self._pause_start   = None
-                self.paused = False
-                log.info("Resumed (SIGUSR2)")
+            if not self._reasons:
+                self._pause_start = time.time()
+            if reason not in self._reasons:
+                self._reasons.add(reason)
+                log.info(f"Paused ({reason})")
+
+    def resume(self, reason: str = USER):
+        with self._lock:
+            if reason not in self._reasons:
+                return
+            self._reasons.discard(reason)
+            log.info(f"Resumed ({reason})")
+            if not self._reasons and self._pause_start is not None:
+                self._total_paused += time.time() - self._pause_start
+                self._pause_start   = None
+
+    def set_visible(self, visible: bool):
+        (self.resume if visible else self.pause)(HIDDEN)
 
     def paused_duration(self) -> float:
         """Total seconds spent paused so far (used to offset elapsed timer)."""
@@ -48,14 +70,24 @@ class SignalState:
         """Call after each slide switch to zero the accumulated pause time."""
         with self._lock:
             self._total_paused = 0.0
-            self._pause_start  = time.time() if self.paused else None
+            self._pause_start  = time.time() if self._reasons else None
 
-    # ── reload / shutdown ────────────────────────────────────
+    # ── next / reload / shutdown ─────────────────────────────
+
+    def request_next(self):
+        with self._lock:
+            self._next = True
+
+    def consume_next(self) -> bool:
+        with self._lock:
+            v = self._next
+            self._next = False
+            return v
 
     def request_reload(self):
         with self._lock:
             self.reload = True
-            log.info("Config reload requested (SIGHUP)")
+            log.info("Config reload requested")
 
     def consume_reload(self) -> bool:
         with self._lock:

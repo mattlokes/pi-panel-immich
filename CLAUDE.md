@@ -1,56 +1,50 @@
-# pi-panel-immich
+# pi-panel-app-immich
 
-An Immich photo-frame slideshow (pygame / pysdl2). Runs as a view inside
-[pi-panel-compositor](../pi-panel-compositor) on `pi@jazz`.
+An Immich photo-frame slideshow (pygame / pysdl2), packaged as a pi-panel app.
+`pi-panel.toml` is its manifest. Installed on jazz, it lives in
+`~/pi-panel-apps/immich` and runs as `pi-panel-app@immich.service`.
 
 ## Running it
 
-A PEP 723 single-file script — dependencies are declared inline and resolved by
-`uv`, so there is no `pyproject.toml` or venv to manage:
+It is a PEP 723 script: dependencies are declared inline and resolved by
+`uv`. There is no `pyproject.toml` or venv to manage. `pi-panel-varlink` comes
+from `../../pi-panel-core/pi-panel-core-ctl/packages/pi-panel-varlink` by
+relative path, which is why the install location matters.
 
 ```bash
-uv run --script pi_panel_immich.py --config config.yaml
+uv run --script pi_panel_immich.py --config config.yaml     # standalone
 ```
 
-`uv` lives at `~/.local/bin/uv` on the Pi. See the `remote-target` skill for
-driving jazz over SSH.
+Under pi-panel, `pi-panel-run` supplies the environment and the unit template
+sets `SDL_VIDEODRIVER=wayland`. The manifest sets `SDL_APP_ID=immich`, which is
+the correct variable on SDL 2.26+; `SDL_VIDEO_WAYLAND_APP_ID` is ignored.
 
-## As a compositor view
+## The config holds an API key
 
-The compositor launches it from `~/.config/pi-panel/compositor.conf`. Two
-environment variables matter and are easy to get wrong:
-
-- **`SDL_VIDEODRIVER=wayland`** — otherwise SDL tries kmsdrm and fights the
-  compositor for the DRM device.
-- **`SDL_APP_ID=immich`** — sets the Wayland `app_id`. This is the correct
-  variable on SDL 2.26+; the older `SDL_VIDEO_WAYLAND_APP_ID` is ignored and the
-  app_id comes out as `python3.13`.
-
-`uv` execs Python as a child, so the client's PID differs from the one the
-compositor launched. That works because the compositor matches a client to its
-slot by walking up the process tree — but it is why `view->pid` and the running
-GUI process are not the same number.
-
-## config.yaml holds an API key
-
-It is gitignored. Do not commit it, print it, or paste it into a log or a
-message. `config.yaml.example` is the one to edit for documentation.
+It lives in `~/.config/pi-panel/apps/immich/config.yaml` on the Pi. A local
+`config.yaml` is gitignored. Do not commit it, print it, or paste it into a
+log or a message. `config.yaml.example` is the one to edit for documentation.
 
 The Immich server is `photos.home.local` (192.168.4.90).
 
-## The Makefile is stale
+## Threads and flags
 
-It still refers to `immich_frame.py` (renamed to `pi_panel_immich.py`),
-deploys to `~/immich-frame`, and targets a host called `prime` rather than
-`jazz`. Treat it as unmaintained — deploy with `rsync` and run through the
-compositor instead. Worth either fixing or deleting.
+Three things poke the main loop:
+- signal handlers
+- the `AppService` thread (`io.pipanel.App` and `io.pipanel.app.Immich`)
+- the cache's prefetch thread
 
-## Signals
+The first two only set flags on `SignalState`. The main loop does all real
+work.
 
-`SIGUSR1` pause, `SIGUSR2` resume, `SIGHUP` reload config, `SIGTERM` stop. All
-are flag-setters consumed by the main loop (`signals.py`).
+Pause has **reasons** (`user`, `hidden`). A user pause must survive pi-panel
+hiding and re-showing the app. While `hidden`, the loop does no rendering at
+all.
 
-Note these only work if the process can actually receive them. Under an older
-compositor that leaked its blocked signal mask to children, SIGTERM was masked
-and every one of these was silently inert — if signals appear to do nothing,
-check `grep SigBlk /proc/<pid>/status` before suspecting the handler.
+## Shutdown must be prompt
+
+The app contract says: exit within 5s of SIGTERM, or systemd SIGKILLs it.
+`PhotoCache.get_next()` takes an `abort` callback for exactly this reason.
+Without it, an unreachable Immich server blocks the main loop forever and the
+SIGTERM flag is never read. Any new blocking wait must check `sig.shutdown`
+too. If signals seem to do nothing, check `grep SigBlk /proc/<pid>/status`.

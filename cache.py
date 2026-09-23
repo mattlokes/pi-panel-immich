@@ -4,7 +4,7 @@ import math
 import random
 import threading
 import time
-from typing import Optional
+from typing import Callable, Optional
 
 import pygame
 from PIL import Image
@@ -16,7 +16,7 @@ from models import Photo
 log = logging.getLogger("pi-panel-immich")
 
 
-def decode_photo(image_bytes: bytes, oversized: tuple[int, int]) -> Optional[Photo]:
+def decode_photo(image_bytes: bytes, oversized: tuple[int, int], asset_id: str = "") -> Optional[Photo]:
     """
     Decode JPEG/PNG bytes into a Photo.
     - PIL image kept at original size (GPU path uploads as-is)
@@ -42,6 +42,7 @@ def decode_photo(image_bytes: bytes, oversized: tuple[int, int]) -> Optional[Pho
             surface       = surface,
             is_portrait   = is_portrait,
             original_size = (iw, ih),
+            asset_id      = asset_id,
         )
     except Exception as e:
         log.error(f"Decode failed: {e}")
@@ -76,7 +77,7 @@ class PhotoCache:
                 if not self._pool:
                     self._refill()
                     if not self._pool:
-                        time.sleep(5)
+                        self._stop.wait(5)
                         continue
                 asset = self._pool.pop(0)
                 aid   = asset.get("id")
@@ -85,24 +86,30 @@ class PhotoCache:
                 log.info(f"Prefetching {aid[:8]}…")
                 raw = self.client.download_thumbnail(aid)
                 if raw:
-                    photo = decode_photo(raw, oversized)
+                    photo = decode_photo(raw, oversized, aid)
                     if photo:
                         with self._lock:
                             self._queue.append(photo)
             else:
-                time.sleep(0.3)
+                self._stop.wait(0.3)
 
     def push_back(self, photo: Photo) -> None:
         """Return a photo to the front of the queue (e.g. when it doesn't fit a group)."""
         with self._lock:
             self._queue.insert(0, photo)
 
-    def get_next(self) -> Photo:
-        while True:
+    def get_next(self, abort: Callable[[], bool] = lambda: False) -> Optional[Photo]:
+        """The next prefetched photo, waiting for one if needed.
+
+        Returns None as soon as |abort()| is true. Without that, an unreachable
+        Immich server leaves this waiting forever, and SIGTERM (which only sets
+        a flag) could never stop the app: systemd would have to SIGKILL it."""
+        while not abort():
             with self._lock:
                 if self._queue:
                     return self._queue.pop(0)
             time.sleep(0.2)
+        return None
 
     def stop(self):
         self._stop.set()
@@ -116,15 +123,21 @@ def portrait_group_size(cfg: Config, first: Photo) -> int:
     return 3  # auto: try for 3, collect_slide_photos falls back to fewer if needed
 
 
-def collect_slide_photos(cache: PhotoCache, cfg: Config) -> list[Photo]:
-    """Return 1 landscape photo, or 2-3 portrait photos, as appropriate."""
-    first = cache.get_next()
+def collect_slide_photos(cache: PhotoCache, cfg: Config,
+                         abort: Callable[[], bool] = lambda: False) -> list[Photo]:
+    """Return 1 landscape photo, or 2-3 portrait photos, as appropriate.
+    Empty only if |abort()| became true while waiting."""
+    first = cache.get_next(abort)
+    if first is None:
+        return []
     if not first.is_portrait:
         return [first]
     group = [first]
     target = portrait_group_size(cfg, first)
     for _ in range(target - 1):
-        nxt = cache.get_next()
+        nxt = cache.get_next(abort)
+        if nxt is None:
+            break
         if not nxt.is_portrait:
             cache.push_back(nxt)
             break

@@ -1,6 +1,7 @@
 # ─────────────────────────────────────────────────────────
-# Immich Frame — config.yaml
-# Copy this file to config.yaml and fill in your values.
+# pi-panel-app-immich — config.yaml
+# pi-panel-pkg copies this to ~/.config/pi-panel/apps/immich/config.yaml;
+# fill in your values there.
 # ─────────────────────────────────────────────────────────
 
 # ── Immich connection ────────────────────────────────────

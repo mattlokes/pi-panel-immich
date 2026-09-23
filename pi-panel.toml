@@ -1,0 +1,23 @@
+[package]
+name = "immich"
+kind = "app"
+version = "0.3.0"
+description = "Immich photo frame: Ken Burns slideshow with portrait grouping"
+
+[run]
+# A PEP 723 script: uv resolves and caches its dependencies on first run.
+exec = "uv run --script pi_panel_immich.py --config ${config_dir}/config.yaml"
+# Sets the Wayland app_id (SDL 2.26+ reads SDL_APP_ID; the older
+# SDL_VIDEO_WAYLAND_* names are ignored).
+env = { SDL_APP_ID = "immich" }
+
+[build]
+# Resolve the script's dependencies at install time rather than on first
+# start, which would otherwise delay the first photo by minutes on a Pi.
+command = "uv sync --script pi_panel_immich.py"
+
+[config]
+templates = ["config.yaml.example"]
+
+[app]
+varlink = true

@@ -15,6 +15,7 @@ class Photo:
     surface: pygame.Surface     # pygame surface for SW path
     is_portrait: bool
     original_size: tuple[int, int]  # (w, h) before any scaling
+    asset_id: str = ""              # Immich asset id, for io.pipanel.app.Immich
 
 
 @dataclass

@@ -8,7 +8,12 @@
 #   "pyyaml>=6.0",
 #   "pysdl2>=0.9.16",
 #   "pysdl2-dll>=2.28.0",
+#   "pi-panel-varlink",
 # ]
+#
+# # Installed by pi-panel-pkg into ~/pi-panel-apps/immich, next to the core.
+# [tool.uv.sources]
+# pi-panel-varlink = { path = "../../pi-panel-core/pi-panel-core-ctl/packages/pi-panel-varlink" }
 # ///
 """
 Pi Panel Immich - Native Raspberry Pi Photo Frame
@@ -19,6 +24,10 @@ Two render backends selectable via config.yaml:
 Usage:
     ./pi_panel_immich.py                        # uses config.yaml in same directory
     ./pi_panel_immich.py --config /path/to.yaml # custom config path
+
+As a pi-panel app (pi-panel-app@immich.service) it also serves io.pipanel.App
+on $PI_PANEL_APP_SOCKET: it pauses while hidden, and offers next / pause /
+resume / reload actions, plus io.pipanel.app.Immich.GetCurrentPhotos.
 """
 
 import argparse
@@ -27,6 +36,7 @@ import time
 from pathlib import Path
 
 import pygame
+from pi_panel_varlink import AppService, Interface
 
 from cache import PhotoCache, collect_slide_photos
 from client import ImmichClient
@@ -34,6 +44,16 @@ from config import load_config
 from models import STATIC_KB, ease_in_out, random_ken_burns
 from renderers import create_renderer
 from signals import SignalState, install_signal_handlers
+
+IMMICH_INTERFACE = """\
+# Immich photo frame: details beyond the generic io.pipanel.App.
+interface io.pipanel.app.Immich
+
+type Photo (asset_id: string, portrait: bool)
+
+# The photo(s) on screen now: one landscape photo, or a group of portraits.
+method GetCurrentPhotos() -> (photos: []Photo, paused: bool)
+"""
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("pi-panel-immich")
@@ -51,6 +71,35 @@ def handle_events() -> tuple[bool, bool]:
             if event.key == pygame.K_RIGHT:
                 force_next = True
     return True, force_next
+
+
+def start_app_service(sig: SignalState, current: list) -> AppService:
+    """io.pipanel.App for pi-panel. Handlers run on the service thread, so they
+    only set flags on |sig|, exactly as the signal handlers do."""
+    immich = Interface(IMMICH_INTERFACE)
+
+    @immich.method("GetCurrentPhotos")
+    async def get_current_photos(call):
+        # The main loop replaces the contents wholesale (current[:] = ...);
+        # list() takes a consistent copy under the GIL.
+        photos = list(current)
+        return {"photos": [{"asset_id": p.asset_id, "portrait": p.is_portrait} for p in photos],
+                "paused": sig.paused}
+
+    service = AppService(
+        product="pi-panel-immich",
+        on_visible=sig.set_visible,
+        actions={
+            "next":   ("Next photo", sig.request_next),
+            "pause":  ("Pause", sig.pause),
+            "resume": ("Resume", sig.resume),
+            "reload": ("Reload config", sig.request_reload),
+        },
+        interfaces=[immich],
+    )
+    if service.start():
+        log.info(f"Serving io.pipanel.App on {service.address}")
+    return service
 
 
 def main():
@@ -75,12 +124,24 @@ def main():
         f"fps={cfg.target_fps} portrait={cfg.portrait_grouping} gap={cfg.portrait_gap_px}px"
     )
 
+    current: list = []
+    service  = start_app_service(sig, current)
     renderer = create_renderer(cfg)
     client   = ImmichClient(base_url=cfg.immich_url, api_key=cfg.api_key)
     cache    = PhotoCache(client, renderer.screen_size, cfg)
 
+    def stopping() -> bool:
+        return sig.shutdown
+
     log.info("Waiting for first slide…")
-    first_photos = collect_slide_photos(cache, cfg)
+    first_photos = collect_slide_photos(cache, cfg, abort=stopping)
+    if not first_photos:
+        log.info("Stopped before the first photo arrived.")
+        cache.stop()
+        service.stop()
+        renderer.shutdown()
+        return
+    current[:] = first_photos
     renderer.present_slide(first_photos, cfg)
     kb_current = STATIC_KB if cfg.transition_type == "crossfade" else random_ken_burns(cfg)
 
@@ -118,7 +179,15 @@ def main():
                 f"fade={cfg.fade_duration}s fps={cfg.target_fps}"
             )
 
-        # ── SIGUSR1: paused ───────────────────────────────────
+        # ── Hidden by pi-panel (or display off): do no work ──
+        if sig.hidden:
+            ok, _ = handle_events()
+            if not ok:
+                break
+            time.sleep(0.2)
+            continue
+
+        # ── SIGUSR1 / "pause" action: paused ─────────────────
         if sig.paused:
             ok, _ = handle_events()
             if not ok:
@@ -136,6 +205,7 @@ def main():
         ok, force_next = handle_events()
         if not ok:
             break
+        force_next = sig.consume_next() or force_next
 
         # Subtract paused time so the display timer doesn't advance while paused
         elapsed    = time.time() - last_switch - sig.paused_duration()
@@ -145,7 +215,9 @@ def main():
 
         # ── Time to transition? ───────────────────────────────
         if elapsed >= cfg.display_seconds or force_next:
-            next_photos = collect_slide_photos(cache, cfg)
+            next_photos = collect_slide_photos(cache, cfg, abort=stopping)
+            if not next_photos:
+                break   # shutting down
             kb_next     = STATIC_KB if crossfade else random_ken_burns(cfg)
             log.info(f"Transition → {len(next_photos)} photo(s)")
 
@@ -168,7 +240,10 @@ def main():
                     if not ok:
                         running = False
                         break
-                    renderer.flip()
+                    if sig.hidden:
+                        time.sleep(0.2)   # off screen: no need to redraw at all
+                    else:
+                        renderer.flip()
                     continue
 
                 trans_elapsed = time.time() - trans_start
@@ -203,6 +278,7 @@ def main():
                 break
 
             kb_current  = kb_next
+            current[:]  = next_photos
             last_switch = time.time()
             sig.reset_pause_accum()     # zero pause accumulator for the new slide
 
@@ -212,6 +288,7 @@ def main():
             renderer.flip()
 
     cache.stop()
+    service.stop()
     renderer.shutdown()
     log.info("Pi Panel Immich stopped.")
 
