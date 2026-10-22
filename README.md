@@ -9,6 +9,7 @@ screen.
 On the panel, as the panel user:
 
 ```bash
+sudo apt install --no-install-recommends libegl1 libgl1 libwayland-egl1 libwayland-cursor0
 pi-panel-pkg install https://github.com/mattlokes/pi-panel-app-immich.git
 $EDITOR ~/.config/pi-panel/apps/immich/config.yaml     # server URL + API key
 pi-panel-ctl enable immich

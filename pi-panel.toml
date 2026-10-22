@@ -19,5 +19,16 @@ command = "uv sync --script pi_panel_immich.py"
 [config]
 templates = ["config.yaml.example"]
 
+[system]
+# SDL comes with pygame and pysdl2-dll, but it dlopens these from the system.
+# On a Lite image they arrive only by accident, through the compositor's
+# -dev build packages. See PACKAGES.md.
+packages = [
+    "libegl1",
+    "libgl1",
+    "libwayland-egl1",
+    "libwayland-cursor0",
+]
+
 [app]
 varlink = true
