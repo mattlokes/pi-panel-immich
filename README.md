@@ -1,4 +1,4 @@
-# pi-panel-app-immich
+# pi-panel-immich
 
 A photo frame for pi-panel. It shows photos from an [Immich](https://immich.app)
 server as a Ken Burns slideshow, and groups portrait photos two or three to a
@@ -10,7 +10,7 @@ On the panel, as the panel user:
 
 ```bash
 sudo apt install --no-install-recommends libegl1 libgl1 libwayland-egl1 libwayland-cursor0
-pi-panel-pkg install https://github.com/mattlokes/pi-panel-app-immich.git
+pi-panel-pkg install https://github.com/mattlokes/pi-panel-immich.git
 $EDITOR ~/.config/pi-panel/apps/immich/config.yaml     # server URL + API key
 pi-panel-ctl enable immich
 ```

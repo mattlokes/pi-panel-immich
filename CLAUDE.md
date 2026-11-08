@@ -1,4 +1,4 @@
-# pi-panel-app-immich
+# pi-panel-immich
 
 An Immich photo-frame slideshow (pygame / pysdl2), packaged as a pi-panel app.
 `pi-panel.toml` is its manifest. Installed on jazz, it lives in
