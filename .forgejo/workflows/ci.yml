@@ -1,0 +1,82 @@
+# Push CI on starscream (Pi 4, host executor, label arm64). See
+# /srv/build/runner-notes/RUNNER.md for what the runner has installed.
+# The runner has no Node, so there are no JS actions: checkout is plain git.
+name: ci
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  ci:
+    runs-on: arm64
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+        working-directory: ws/pi-panel-apps/pi-panel-immich
+    env:
+      TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      SERVER: ${{ github.server_url }}
+      REPO: ${{ github.repository }}
+      SHA: ${{ github.sha }}
+      REF: ${{ github.ref }}
+      # -march/-mcpu/-mtune or =native would tie a Pi 4 build to the Pi 4.
+      BAD_FLAGS: '-m(arch|cpu|tune)\b|=native\b'
+    steps:
+      - name: checkout (this repo + pi-panel-core next to it)
+        working-directory: .
+        run: |
+          set -euo pipefail
+          auth="Authorization: Basic $(printf 'ci:%s' "$TOKEN" | base64 -w0)"
+          fetch() {  # fetch <dir> <url> <ref>...: the first ref that works. Only Forgejo URLs get the token.
+            local dir=$1 url=$2 ref; shift 2
+            local hdr=(); [[ $url == "$SERVER"/* ]] && hdr=(-c "http.extraHeader=$auth")
+            rm -rf "$dir"; git init -q "$dir" || return 1
+            for ref in "$@"; do
+              if git -C "$dir" "${hdr[@]}" fetch -q --depth=1 "$url" "$ref"; then
+                git -C "$dir" checkout -q --detach FETCH_HEAD || return 1
+                echo "$dir: $(git -C "$dir" log -1 --format='%h %s')  [$url $ref]"
+                return 0
+              fi
+            done
+            return 1
+          }
+          rm -rf ws && mkdir -p ws/pi-panel-apps
+          fetch ws/pi-panel-apps/pi-panel-immich "$SERVER/$REPO.git" "$SHA" "$REF"
+          # Apps use the core by relative path (../../pi-panel-core). If the job token
+          # can't read the private core repo, fall back to its public GitHub mirror.
+          fetch ws/pi-panel-core "$SERVER/${REPO%%/*}/pi-panel-core.git" refs/heads/main || {
+            echo "::warning::pi-panel-core not readable on Forgejo with the job token; using the GitHub mirror"
+            fetch ws/pi-panel-core https://github.com/mattlokes/pi-panel-core.git refs/heads/main
+          }
+
+      - name: guard against CPU-specific build flags
+        run: |
+          if git grep -nIE -e "$BAD_FLAGS" -- . ':!.forgejo/' ':!*.md'; then
+            echo "::error::CPU-specific compiler flags found (see above). Pi 4 builds must stay valid on the Pi 5."
+            exit 1
+          fi
+          for v in CFLAGS CXXFLAGS CPPFLAGS LDFLAGS; do
+            if grep -qE -e "$BAD_FLAGS" <<<"${!v:-}"; then echo "::error::\$$v has CPU-specific flags: ${!v}"; exit 1; fi
+          done
+          echo "no CPU-specific flags"
+
+      - name: manifest check and [build] (as pi-panel-pkg does it)
+        run: |
+          uv run -q --frozen --project ../../pi-panel-core/pi-panel-core-pluginman python - <<'EOF'
+          import os, subprocess
+          from pathlib import Path
+          from pi_panel_pluginman.manifest import Manifest
+          m = Manifest.load(Path("."))
+          print(f"manifest ok: {m.name} ({m.kind}) {m.version}")
+          if m.build:
+              print(f"$ {m.build}", flush=True)
+              # uv run sets VIRTUAL_ENV to pluginman's venv; pi-panel-pkg's builds don't see one
+              env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
+              subprocess.run(m.build, shell=True, check=True, env=env)
+          EOF
+
+      # No tests yet: plan 2 turns the script into a pyproject with tests and --check-config.
+      - name: import smoke (the script's own uv environment)
+        run: uv run -q --script pi_panel_immich.py --help
