@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import pygame
 from PIL import Image
 
-from config import Config
+from .config import Config
 
 
 @dataclass

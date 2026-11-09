@@ -1,16 +1,18 @@
 # ─────────────────────────────────────────────────────────
-# pi-panel-immich — config.yaml
-# pi-panel-pkg copies this to ~/.config/pi-panel/apps/immich/config.yaml;
-# fill in your values there.
+# pi-panel-immich — config.toml
+# pi-panel-pkg copies this to /persistent/pi-panel/config/apps/immich/config.toml;
+# fill in your values there (it holds the API key: keep it 0600).
+# Check it with `pi-panel-ctl config check`; apply it with
+# `pi-panel-ctl action immich reload` (a bad file is refused).
 # ─────────────────────────────────────────────────────────
 
 # ── Immich connection ────────────────────────────────────
-immich_url: "http://your-immich-host:80"
-api_key: "YOUR_API_KEY_HERE"
+immich_url = "http://your-immich-host:80"
+api_key = "YOUR_API_KEY_HERE"
 
 # Album ID — leave empty for random photos from whole library
 # Get it from the album URL: /albums/<uuid-here>
-album_id: ""
+album_id = ""
 
 # ── Renderer ─────────────────────────────────────────────
 # "sw"  — pygame software renderer
@@ -23,56 +25,56 @@ album_id: ""
 #         Requires pysdl2 and pysdl2-dll (installed automatically by uv)
 #         Requires the Pi's GPU driver to be active (default on Pi OS)
 #         Will crash with a clear error if the GPU is unavailable.
-renderer: "sw"
+renderer = "sw"
 
 # ── Display ──────────────────────────────────────────────
-display_seconds: 10.0
-fullscreen: true
-window_width: 1280    # used only when fullscreen: false
-window_height: 720
+display_seconds = 10.0
+fullscreen = true
+window_width = 1280    # used only when fullscreen = false
+window_height = 720
 
 # ── Transitions ──────────────────────────────────────────
 # "ken_burns" — slow pan & zoom with crossfade (recommended)
 # "crossfade"  — simple opacity blend between static images
-transition_type: "ken_burns"
+transition_type = "ken_burns"
 
 # Duration of the crossfade overlap at the end of each display period
-fade_duration: 1.5
+fade_duration = 1.5
 
 # ── Ken Burns ────────────────────────────────────────────
 # 1.0 = no zoom, 1.15 = 15% zoom. Keep max below ~1.25.
-ken_burns_zoom_min: 1.0
-ken_burns_zoom_max: 1.15
+ken_burns_zoom_min = 1.0
+ken_burns_zoom_max = 1.15
 
 # Total duration of pan/zoom per photo. Should be >= display_seconds.
-ken_burns_duration: 10.0
+ken_burns_duration = 10.0
 
 # ── Portrait grouping ────────────────────────────────────
 # Portrait images are grouped side-by-side to fill the 16:9 frame.
 # "2"    — always 2 side by side
 # "3"    — always 3 side by side
 # "auto" — try for 3; shows fewer if consecutive portraits aren't available
-portrait_grouping: "auto"
+portrait_grouping = "auto"
 
 # Gap in pixels between grouped portrait images (0 for flush)
-portrait_gap_px: 10
+portrait_gap_px = 10
 
 # How much to crop portrait photos to reduce top/bottom black bars.
 # 0.0 = contain (no crop, may have black bars)
 # 1.0 = cover (crop left/right until bars are gone)
 # 0.5 = halfway — a good starting point
-portrait_fill: 0.0
+portrait_fill = 0.0
 
 # How much to crop landscape photos to fill the screen.
 # 0.0 = contain (letterbox non-16:9 photos)
 # 1.0 = cover (crop to fill, default)
-landscape_fill: 1.0
+landscape_fill = 1.0
 
 # ── Performance ──────────────────────────────────────────
 # Photos to prefetch in background. Increase for portrait grouping.
-cache_size: 6
+cache_size = 6
 
 # Render target FPS.
 # SW renderer:  30 recommended (halves CPU vs 60, imperceptible on slow KB)
 # GPU renderer: 60 fine (GPU does the work, CPU impact is minimal)
-target_fps: 30
+target_fps = 30

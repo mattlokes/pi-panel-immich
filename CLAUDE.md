@@ -1,19 +1,25 @@
 # pi-panel-immich
 
 An Immich photo-frame slideshow (pygame / pysdl2), packaged as a pi-panel app.
-`pi-panel.toml` is its manifest. Installed on jazz, it lives in
-`~/pi-panel-apps/immich` and runs as `pi-panel-app@immich.service`.
+`pi-panel.toml` is its manifest. Installed, it lives in
+`/opt/pi-panel/pi-panel-apps/immich` and runs as `pi-panel-app@immich.service`.
 
 ## Running it
 
-It is a PEP 723 script: dependencies are declared inline and resolved by
-`uv`. There is no `pyproject.toml` or venv to manage. `pi-panel-varlink` comes
-from `../../pi-panel-core/pi-panel-core-ctl/packages/pi-panel-varlink` by
-relative path, which is why the install location matters.
+A uv project (`src/pi_panel_immich`, console script `pi-panel-immich`); until
+0.4.0 it was a PEP 723 script. `pi-panel-varlink` comes from
+`../../pi-panel-core/pi-panel-core-ctl/packages/pi-panel-varlink` by relative
+path, which is why the install location matters. Python is pinned to 3.13
+(`.python-version`): pygame has no wheels for 3.14.
 
 ```bash
-uv run --script pi_panel_immich.py --config config.yaml     # standalone
+uv run pytest                                        # offline: config only, no pygame import
+uv run pi-panel-immich --config config.toml          # standalone
 ```
+
+`cli.py` is the entry point. It handles `--check-config` (the manifest's
+`[config] check`) and `--convert-yaml` with only `config.py` imported, and
+imports `__main__` (pygame, SDL) only to run the slideshow. Keep it that way.
 
 Under pi-panel, `pi-panel-run` supplies the environment and the unit template
 sets `SDL_VIDEODRIVER=wayland`. The manifest sets `SDL_APP_ID=immich`, which is
@@ -21,9 +27,10 @@ the correct variable on SDL 2.26+; `SDL_VIDEO_WAYLAND_APP_ID` is ignored.
 
 ## The config holds an API key
 
-It lives in `~/.config/pi-panel/apps/immich/config.yaml` on the Pi. A local
-`config.yaml` is gitignored. Do not commit it, print it, or paste it into a
-log or a message. `config.yaml.example` is the one to edit for documentation.
+It lives in `/persistent/pi-panel/config/apps/immich/config.toml` on the Pi. A
+local `config.toml` (or an old `config.yaml`) is gitignored. Do not commit it,
+print it, or paste it into a log or a message. `config.toml.example` is the
+one to edit for documentation, and a test checks it holds every key.
 
 The Immich server is `photos.home.local` (192.168.4.90).
 

@@ -1,36 +1,17 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.11"
-# dependencies = [
-#   "pygame>=2.5",
-#   "requests>=2.31",
-#   "pillow>=10.0",
-#   "pyyaml>=6.0",
-#   "pysdl2>=0.9.16",
-#   "pysdl2-dll>=2.28.0",
-#   "pi-panel-varlink",
-# ]
-#
-# # Installed by pi-panel-pkg into ~/pi-panel-apps/immich, next to the core.
-# [tool.uv.sources]
-# pi-panel-varlink = { path = "../../pi-panel-core/pi-panel-core-ctl/packages/pi-panel-varlink" }
-# ///
 """
 Pi Panel Immich - Native Raspberry Pi Photo Frame
-Two render backends selectable via config.yaml:
-  renderer: "sw"  — pygame software renderer (CPU smoothscale)
-  renderer: "gpu" — pysdl2 hardware renderer (VideoCore VII on Pi 5)
+Two render backends selectable via config.toml:
+  renderer = "sw"  — pygame software renderer (CPU smoothscale)
+  renderer = "gpu" — pysdl2 hardware renderer (VideoCore VII on Pi 5)
 
-Usage:
-    ./pi_panel_immich.py                        # uses config.yaml in same directory
-    ./pi_panel_immich.py --config /path/to.yaml # custom config path
+Usage (the command-line handling is in cli.py, which imports this only to run):
+    pi-panel-immich --config config.toml
 
 As a pi-panel app (pi-panel-app@immich.service) it also serves io.pipanel.App
 on $PI_PANEL_APP_SOCKET: it pauses while hidden, and offers next / pause /
 resume / reload actions, plus io.pipanel.app.Immich.GetCurrentPhotos.
 """
 
-import argparse
 import logging
 import time
 from pathlib import Path
@@ -38,12 +19,12 @@ from pathlib import Path
 import pygame
 from pi_panel_varlink import AppService, Interface
 
-from cache import PhotoCache, collect_slide_photos
-from client import ImmichClient
-from config import load_config
-from models import STATIC_KB, ease_in_out, random_ken_burns
-from renderers import create_renderer
-from signals import SignalState, install_signal_handlers
+from .cache import PhotoCache, collect_slide_photos
+from .client import ImmichClient
+from .config import ConfigError, load_config
+from .models import STATIC_KB, ease_in_out, random_ken_burns
+from .renderers import create_renderer
+from .signals import SignalState, install_signal_handlers
 
 IMMICH_INTERFACE = """\
 # Immich photo frame: details beyond the generic io.pipanel.App.
@@ -55,7 +36,6 @@ type Photo (asset_id: string, portrait: bool)
 method GetCurrentPhotos() -> (photos: []Photo, paused: bool)
 """
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("pi-panel-immich")
 
 
@@ -102,22 +82,12 @@ def start_app_service(sig: SignalState, current: list) -> AppService:
     return service
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Pi Panel Immich — native Pi photo frame")
-    parser.add_argument(
-        "--config", "-c",
-        type=Path,
-        default=Path(__file__).parent / "config.yaml",
-        help="Path to YAML config file",
-    )
-    args = parser.parse_args()
-
+def run(config_path: Path, cfg) -> None:
+    """The slideshow, with an already validated config (see cli.py)."""
     # ── Signal state (installed before renderer so signals are safe immediately)
     sig = SignalState()
     install_signal_handlers(sig)
 
-    config_path = args.config
-    cfg         = load_config(config_path)
     log.info(
         f"renderer={cfg.renderer} transition={cfg.transition_type} "
         f"display={cfg.display_seconds}s fade={cfg.fade_duration}s "
@@ -162,7 +132,11 @@ def main():
 
         # ── SIGHUP: reload config ─────────────────────────────
         if sig.consume_reload():
-            new_cfg = load_config(config_path)
+            try:
+                new_cfg = load_config(config_path)
+            except ConfigError as exc:
+                log.error(f"reload refused, keeping the running config: {exc}")
+                continue
             if new_cfg.renderer != cfg.renderer:
                 log.warning(
                     "renderer changed in config — renderer switch requires restart, ignoring"
@@ -294,4 +268,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    from .cli import main
+    raise SystemExit(main())

@@ -19,5 +19,5 @@ runtime packages only does not have them.
 
 ## Not from apt
 
-- `uv` (from the core). It is run by `[run]` (`uv run --script`) and by `[build]`.
-- The script's environment lives in `~pi/.cache/uv/environments-v2/`, not in the package directory. An image must keep uv's cache, or run `uv sync --script` again on first boot.
+- `uv` (from the core), for `[build]` only. Since 0.4.0 everything lives in the package's own `.venv` (no longer in `~/.cache/uv`), so a read-only image needs nothing at first boot.
+- Python is the system `python3` (3.13, pinned by `.python-version`): pygame publishes no wheels for newer versions yet.

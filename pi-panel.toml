@@ -1,23 +1,26 @@
 [package]
 name = "immich"
 kind = "app"
-version = "0.3.0"
+version = "0.4.0"
 description = "Immich photo frame: Ken Burns slideshow with portrait grouping"
 
 [run]
-# A PEP 723 script: uv resolves and caches its dependencies on first run.
-exec = "uv run --script pi_panel_immich.py --config ${config_dir}/config.yaml"
+# The venv's console script: everything it needs is in .venv, built at install.
+exec = ".venv/bin/pi-panel-immich --config ${config_dir}/config.toml"
 # Sets the Wayland app_id (SDL 2.26+ reads SDL_APP_ID; the older
 # SDL_VIDEO_WAYLAND_* names are ignored).
 env = { SDL_APP_ID = "immich" }
 
 [build]
-# Resolve the script's dependencies at install time rather than on first
-# start, which would otherwise delay the first photo by minutes on a Pi.
-command = "uv sync --script pi_panel_immich.py"
+# Everything into the package's own .venv at install time, precompiled: the
+# Pi boots from slow storage, and an image's /opt is read-only afterwards
+# (nothing may live in ~/.cache/uv).
+command = "uv sync --frozen --no-dev --compile-bytecode"
 
 [config]
-templates = ["config.yaml.example"]
+templates = ["config.toml.example"]
+# Run by `pi-panel-ctl config check` (and before `config import`): no pygame, no display.
+check = ".venv/bin/pi-panel-immich --check-config ${config_dir}/config.toml"
 
 [system]
 # SDL comes with pygame and pysdl2-dll, but it dlopens these from the system.

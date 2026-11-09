@@ -5,8 +5,8 @@ from typing import Optional
 
 import pygame
 
-from config import Config
-from models import KenBurnsParams, Photo
+from .config import Config
+from .models import KenBurnsParams, Photo
 
 log = logging.getLogger("pi-panel-immich")
 
@@ -459,8 +459,8 @@ def create_renderer(cfg: Config) -> Renderer:
         except Exception as e:
             raise SystemExit(
                 f"\n[FATAL] GPU renderer failed to initialise:\n  {e}\n\n"
-                f"To use the software renderer instead, set in config.yaml:\n"
-                f"  renderer: \"sw\"\n"
+                f"To use the software renderer instead, set in config.toml:\n"
+                f"  renderer = \"sw\"\n"
             )
     else:
         log.info("Initialising SW renderer (pygame)…")

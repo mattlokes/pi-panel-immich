@@ -77,6 +77,34 @@ jobs:
               subprocess.run(m.build, shell=True, check=True, env=env)
           EOF
 
-      # No tests yet: plan 2 turns the script into a pyproject with tests and --check-config.
-      - name: import smoke (the script's own uv environment)
-        run: uv run -q --script pi_panel_immich.py --help
+      - name: "[config] check against the shipped templates (as pi-panel-ctl config check runs it)"
+        run: |
+          uv run -q --frozen --project ../../pi-panel-core/pi-panel-core-pluginman python - <<'EOF'
+          import os, shutil, subprocess, sys, tempfile
+          from pathlib import Path
+          from pi_panel_pluginman.manifest import Manifest
+          m = Manifest.load(Path("."))
+          if not m.check:
+              print("no [config] check declared"); sys.exit(0)
+          config_dir = Path(tempfile.mkdtemp()) / f"{m.kind}s" / m.name
+          config_dir.mkdir(parents=True)
+          for t in m.templates:               # what an install puts there
+              name = Path(t).name.removesuffix(".example")
+              shutil.copyfile(t, config_dir / name)
+          variables = {"config_dir": str(config_dir), "package_dir": os.getcwd(),
+                       "name": m.name, "runtime_dir": "/run/pi-panel"}
+          import re, shlex
+          argv = [re.sub(r"\$\{([a-z_]+)\}", lambda x: variables[x.group(1)], a)
+                  for a in shlex.split(m.check)]
+          print("$", shlex.join(argv), flush=True)
+          env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
+          sys.exit(subprocess.run(argv, env=env).returncode)
+          EOF
+
+      - name: tests
+        run: |
+          uv sync --frozen          # adds the dev group (pytest, pyyaml) to the venv [build] made
+          uv run --frozen pytest -q
+
+      - name: "import smoke (the slideshow: pygame and SDL)"
+        run: PYGAME_HIDE_SUPPORT_PROMPT=1 .venv/bin/python -c 'import pi_panel_immich.__main__; print("imports ok")'

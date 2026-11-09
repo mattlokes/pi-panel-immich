@@ -9,9 +9,9 @@ from typing import Callable, Optional
 import pygame
 from PIL import Image
 
-from client import ImmichClient
-from config import Config
-from models import Photo
+from .client import ImmichClient
+from .config import Config
+from .models import Photo
 
 log = logging.getLogger("pi-panel-immich")
 

@@ -11,20 +11,25 @@ On the panel, as the panel user:
 ```bash
 sudo apt install --no-install-recommends libegl1 libgl1 libwayland-egl1 libwayland-cursor0
 pi-panel-pkg install https://github.com/mattlokes/pi-panel-immich.git
-$EDITOR ~/.config/pi-panel/apps/immich/config.yaml     # server URL + API key
+$EDITOR /persistent/pi-panel/config/apps/immich/config.toml     # server URL + API key
+pi-panel-ctl config check
 pi-panel-ctl enable immich
 ```
 
-`pi-panel-pkg` runs the build step (`uv sync --script`), which fetches the
-dependencies, and copies `config.yaml.example` to the config directory the
-first time only. Later updates keep your config.
+`pi-panel-pkg` runs the build step (`uv sync --frozen --no-dev`), which puts
+every dependency in the package's own `.venv`, and copies `config.toml.example`
+to the config directory the first time only. Later updates keep your config.
+
+An old `config.yaml` (before 0.4.0) converts with
+`uv run --with pyyaml pi-panel-immich --convert-yaml config.yaml config.toml`,
+which checks it and never overwrites.
 
 - **API key:** in Immich, go to Account Settings → API Keys → Create.
 - **Album:** copy the UUID from the album URL (`/albums/<uuid>`). Leave
   `album_id` empty to show random photos from the whole library.
 
 The config file holds the API key, so keep it private:
-`chmod 600 ~/.config/pi-panel/apps/immich/config.yaml`.
+`chmod 600 /persistent/pi-panel/config/apps/immich/config.toml`.
 
 ## Control
 
@@ -49,7 +54,7 @@ panel units:
 ```bash
 systemctl kill -s USR1 pi-panel-app@immich   # pause
 systemctl kill -s USR2 pi-panel-app@immich   # resume
-systemctl kill -s HUP  pi-panel-app@immich   # reload config.yaml
+systemctl kill -s HUP  pi-panel-app@immich   # reload config.toml (a bad file is refused)
 ```
 
 ### What a reload changes
@@ -64,7 +69,8 @@ It still runs outside pi-panel, e.g. on a desktop. In that case it serves no
 Varlink socket:
 
 ```bash
-uv run --script pi_panel_immich.py --config config.yaml
+uv sync
+uv run pi-panel-immich --config config.toml
 ```
 
 | Key | Action |
@@ -84,9 +90,9 @@ uv run --script pi_panel_immich.py --config config.yaml
 
 ## Performance tuning
 
-```yaml
-target_fps: 30            # halves CPU vs 60; imperceptible on a slow Ken Burns
-ken_burns_zoom_min: 1.0   # a smaller zoom range means less scaling work (sw renderer)
-ken_burns_zoom_max: 1.08
-cache_size: 3             # fewer prefetched photos, less RAM
+```toml
+target_fps = 30            # halves CPU vs 60; imperceptible on a slow Ken Burns
+ken_burns_zoom_min = 1.0   # a smaller zoom range means less scaling work (sw renderer)
+ken_burns_zoom_max = 1.08
+cache_size = 3             # fewer prefetched photos, less RAM
 ```
