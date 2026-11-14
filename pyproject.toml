@@ -1,6 +1,6 @@
 [project]
 name = "pi-panel-immich"
-version = "0.4.0"
+version = "0.4.1"
 description = "pi-panel app: an Immich photo frame, Ken Burns slideshow with portrait grouping"
 requires-python = ">=3.11"
 license = { text = "MIT" }

@@ -19,7 +19,12 @@ class ImmichClient:
 
     def get_random_assets(self, count: int = 50) -> list[dict]:
         try:
-            r = self.session.get(f"{self.base_url}/api/assets/random", params={"count": count}, timeout=10)
+            # Immich 3.x removed GET /api/assets/random; POST /api/search/random replaces it.
+            r = self.session.post(
+                f"{self.base_url}/api/search/random",
+                json={"size": count, "type": "IMAGE"},
+                timeout=10,
+            )
             r.raise_for_status()
             return [a for a in r.json() if a.get("type") == "IMAGE"]
         except Exception as e:

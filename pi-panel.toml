@@ -1,7 +1,7 @@
 [package]
 name = "immich"
 kind = "app"
-version = "0.4.0"
+version = "0.4.1"
 description = "Immich photo frame: Ken Burns slideshow with portrait grouping"
 
 [run]
